@@ -12,46 +12,20 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set hostname
-        run: sudo hostnamectl set-hostname itz_ytansh
-
-      - name: Download VPS backup (if any)
-        uses: actions/download-artifact@v4
-        with:
-          name: vps-backup
-          path: ./backup
-        continue-on-error: true
-
       - name: Install prerequisites
         run: |
           sudo apt update
-          sudo apt install -y tmate curl unzip net-tools
+          sudo apt install -y curl unzip net-tools
 
       - name: Install Tailscale
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Restore backup files
-        run: |
-          if [ -f ./backup/backup.zip ]; then
-            unzip -o ./backup/backup.zip -d /
-          else
-            echo "No backup found, starting fresh"
-          fi
-
-      - name: Restore Tailscale state
-        run: |
-          if [ -f /opt/vps-backup/data/tailscaled.state ]; then
-            sudo mkdir -p /var/lib/tailscale
-            sudo cp /opt/vps-backup/data/tailscaled.state /var/lib/tailscale/tailscaled.state
-            sudo chmod 600 /var/lib/tailscale/tailscaled.state
-          fi
-
       - name: Start Tailscale
         run: |
           sudo tailscaled &
           sleep 8
-          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo "Tailscale already up"
+          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo --ssh
 
       - name: Create user
         run: |
@@ -62,10 +36,14 @@ jobs:
             echo "itz_ytansh ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/itz_ytansh
           fi
 
-      - name: Start tmate session
-        uses: mxschmitt/action-tmate@v3
-
       - name: Show Tailscale IP
         run: |
-          echo "Tailscale IP:"
-          tailscale ip -4 || echo "no IP"
+          echo "======================================"
+          echo "TAILSCALE IP:"
+          sudo tailscale ip -4
+          echo "======================================"
+          echo "SSH: ssh itz_ytansh@<IP above>"
+          echo "Password: itz_ytansh"
+
+      - name: Keep VPS alive for 6 hours
+        run: sleep 21600
