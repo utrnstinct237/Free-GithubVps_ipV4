@@ -15,17 +15,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt update
-          sudo apt install -y curl unzip net-tools
-
-      - name: Install Tailscale
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-
-      - name: Start Tailscale
-        run: |
-          sudo tailscaled &
-          sleep 8
-          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo --ssh
+          sudo apt install -y curl unzip net-tools wget socat
 
       - name: Create user
         run: |
@@ -36,14 +26,69 @@ jobs:
             echo "itz_ytansh ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/itz_ytansh
           fi
 
-      - name: Show Tailscale IP
-        run: |
-          echo "======================================"
-          echo "TAILSCALE IP:"
-          sudo tailscale ip -4
-          echo "======================================"
-          echo "SSH: ssh itz_ytansh@<IP above>"
-          echo "Password: itz_ytansh"
+      - name: Download previous backup
+        uses: actions/download-artifact@v4
+        with:
+          name: vps-backup
+          path: ./backup
+        continue-on-error: true
 
-      - name: Keep VPS alive for 6 hours
-        run: sleep 21600
+      - name: Install cloudflared
+        run: |
+          sudo wget -q -O /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          sudo chmod +x /usr/local/bin/cloudflared
+          sudo /usr/local/bin/cloudflared --version
+
+      - name: Install Xray
+        run: |
+          sudo bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+          sudo /usr/local/bin/xray version | head -1
+
+      - name: Install 3x-ui panel
+        run: |
+          sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)" || true
+
+      - name: Restore backup if exists
+        run: |
+          if [ -f ./backup/vps-backup.tar.gz ]; then
+            echo "=== Restoring backup ==="
+            sudo tar -xzf ./backup/vps-backup.tar.gz -C /
+            sudo systemctl restart x-ui 2>/dev/null || true
+          else
+            echo "=== No backup found, fresh start ==="
+          fi
+
+      - name: Start cloudflared tunnel
+        run: |
+          sudo nohup /usr/local/bin/cloudflared tunnel --no-autoupdate run --token ${{ secrets.CF_TUNNEL_TOKEN }} > /tmp/cf.log 2>&1 &
+          sleep 12
+          sudo grep "Registered tunnel" /tmp/cf.log | tail -2
+
+      - name: Show status
+        run: |
+          echo "======================"
+          echo "SSH: ssh itz_ytansh@console.core-sync-23.de5.net"
+          echo "Password: itz_ytansh"
+          echo "Panel: https://panel.core-sync-23.de5.net"
+          echo "======================"
+
+      - name: Keep alive 5.5 hours
+        run: sleep 19800
+
+      - name: Backup before session ends
+        if: always()
+        run: |
+          sudo mkdir -p /tmp/backup-root
+          sudo cp -r /etc/x-ui /tmp/backup-root/ 2>/dev/null || true
+          sudo cp -r /usr/local/etc/xray /tmp/backup-root/ 2>/dev/null || true
+          sudo cp -r /usr/local/x-ui /tmp/backup-root/x-ui-app 2>/dev/null || true
+          sudo tar -czf vps-backup.tar.gz -C /tmp/backup-root . 2>/dev/null || true
+          ls -lh vps-backup.tar.gz
+
+      - name: Upload backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-backup
+          path: vps-backup.tar.gz
+          retention-days: 30
