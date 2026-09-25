@@ -37,25 +37,32 @@ jobs:
         run: |
           sudo wget -q -O /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
           sudo chmod +x /usr/local/bin/cloudflared
-          sudo /usr/local/bin/cloudflared --version
 
       - name: Install Xray
         run: |
           sudo bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-          sudo /usr/local/bin/xray version | head -1
 
       - name: Install 3x-ui panel
         run: |
           sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)" || true
+
+      - name: Configure panel defaults
+        run: |
+          sudo /usr/local/x-ui/x-ui setting -port 17403
+          sudo /usr/local/x-ui/x-ui setting -username admin -password admin123
+          sudo /usr/local/x-ui/x-ui setting -webBasePath /panel-ops/
+          sudo systemctl restart x-ui
+          sleep 3
+          sudo /usr/local/x-ui/x-ui setting -show
 
       - name: Restore backup if exists
         run: |
           if [ -f ./backup/vps-backup.tar.gz ]; then
             echo "=== Restoring backup ==="
             sudo tar -xzf ./backup/vps-backup.tar.gz -C /
-            sudo systemctl restart x-ui 2>/dev/null || true
+            sudo systemctl restart x-ui
           else
-            echo "=== No backup found, fresh start ==="
+            echo "=== No backup, fresh start ==="
           fi
 
       - name: Start cloudflared tunnel
@@ -68,8 +75,7 @@ jobs:
         run: |
           echo "======================"
           echo "SSH: ssh itz_ytansh@console.core-sync-23.de5.net"
-          echo "Password: itz_ytansh"
-          echo "Panel: https://panel.core-sync-23.de5.net"
+          echo "Panel: https://ops.core-sync-23.de5.net/panel-ops/"
           echo "======================"
 
       - name: Keep alive 5.5 hours
@@ -81,7 +87,6 @@ jobs:
           sudo mkdir -p /tmp/backup-root
           sudo cp -r /etc/x-ui /tmp/backup-root/ 2>/dev/null || true
           sudo cp -r /usr/local/etc/xray /tmp/backup-root/ 2>/dev/null || true
-          sudo cp -r /usr/local/x-ui /tmp/backup-root/x-ui-app 2>/dev/null || true
           sudo tar -czf vps-backup.tar.gz -C /tmp/backup-root . 2>/dev/null || true
           ls -lh vps-backup.tar.gz
 
